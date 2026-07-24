@@ -1,0 +1,1 @@
+"""Mahjong Score Flow package."""

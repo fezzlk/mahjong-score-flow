@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>麻雀点数やり取り</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+.screen { display: none; padding: 16px; max-width: 480px; margin: 0 auto; }
+.screen.active { display: block; }
+h1 { font-size: 1.4em; text-align: center; margin-bottom: 16px; color: #e94560; }
+h2 { font-size: 1.1em; margin-bottom: 12px; color: #0f3460; background: #e94560; padding: 8px 12px; border-radius: 8px; text-align: center; }
+.btn { display: inline-block; padding: 12px 24px; border: none; border-radius: 8px; font-size: 1em; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
+.btn:active { transform: scale(0.95); }
+.btn-primary { background: #e94560; color: #fff; }
+.btn-secondary { background: #0f3460; color: #fff; }
+.btn-danger { background: #c0392b; color: #fff; }
+.btn-small { padding: 8px 16px; font-size: 0.85em; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+input, select { width: 100%; padding: 12px; border: 2px solid #333; border-radius: 8px; font-size: 1em; background: #16213e; color: #eee; margin-bottom: 8px; }
+input:focus, select:focus { border-color: #e94560; outline: none; }
+label { display: block; margin-bottom: 4px; font-size: 0.85em; color: #aaa; }
+
+/* Lobby */
+.lobby-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.room-code-display { text-align: center; font-size: 2.5em; font-weight: bold; letter-spacing: 8px; color: #e94560; background: #16213e; padding: 16px; border-radius: 12px; margin: 16px 0; }
+
+/* Seat selection grid */
+.seat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+.seat-card { background: #16213e; border: 2px solid #333; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s; }
+.seat-card:active { transform: scale(0.97); }
+.seat-card.taken { border-color: #2ecc71; cursor: pointer; }
+.seat-card.mine { border-color: #e94560; }
+.seat-card .seat-wind { font-size: 1.2em; font-weight: bold; color: #e94560; }
+.seat-card .seat-name { margin-top: 8px; font-size: 0.9em; color: #aaa; }
+.seat-card.taken .seat-name { color: #2ecc71; }
+.seat-card.mine .seat-name { color: #e94560; }
+
+/* Score board */
+.scoreboard { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.player-card { background: #16213e; border-radius: 12px; padding: 12px; text-align: center; position: relative; border: 2px solid transparent; }
+.player-card.dealer { border-color: #e94560; }
+.player-card .wind { font-size: 0.75em; color: #e94560; font-weight: bold; }
+.player-card .name { font-size: 0.9em; margin: 4px 0; }
+.player-card .points { font-size: 1.5em; font-weight: bold; }
+.player-card .points.negative { color: #c0392b; }
+.player-card .delta { font-size: 0.8em; margin-top: 2px; }
+.player-card .delta.plus { color: #2ecc71; }
+.player-card .delta.minus { color: #e74c3c; }
+
+/* Round info */
+.round-info { text-align: center; background: #0f3460; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9em; }
+.round-info span { margin: 0 8px; }
+
+/* Action buttons */
+.actions { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; justify-content: center; }
+.actions .btn { flex: 1; min-width: 60px; text-align: center; }
+
+/* Point selection grid */
+.point-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
+.point-btn { padding: 10px 4px; border: 2px solid #333; border-radius: 8px; background: #16213e; color: #eee; font-size: 0.85em; cursor: pointer; text-align: center; transition: all 0.15s; }
+.point-btn:active, .point-btn.selected { background: #e94560; border-color: #e94560; }
+.point-btn .label { font-size: 0.7em; color: #aaa; display: block; }
+.point-btn.selected .label { color: #fff; }
+
+/* Player select chips */
+.player-chips { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.chip { padding: 8px 16px; border-radius: 20px; border: 2px solid #333; background: #16213e; color: #eee; cursor: pointer; font-size: 0.9em; }
+.chip.selected { background: #e94560; border-color: #e94560; }
+.chip:active { transform: scale(0.95); }
+
+/* Riichi/Tenpai toggle on player card */
+.riichi-btn, .tenpai-btn { margin-top: 4px; padding: 5px 14px; border: 1px solid #555; border-radius: 12px; background: transparent; color: #888; font-size: 0.78em; cursor: pointer; transition: all 0.15s; display: inline-block; }
+.riichi-btn.active { background: #f39c12; border-color: #f39c12; color: #fff; font-weight: bold; }
+.tenpai-btn.active { background: #3498db; border-color: #3498db; color: #fff; font-weight: bold; }
+.riichi-btn:active, .tenpai-btn:active { transform: scale(0.93); }
+.riichi-btn.disabled, .tenpai-btn.disabled { opacity: 0.3; cursor: default; }
+.toggle-row { margin-top: 6px; display: flex; gap: 6px; justify-content: center; }
+@keyframes riichi-blink { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 12px 4px #f39c12; } }
+.player-card.riichi-active { animation: riichi-blink 1.2s ease-in-out infinite; border-color: #f39c12; }
+
+/* Dice */
+.dice { width: 64px; height: 64px; background: #fff; border-radius: 10px; display: grid; padding: 10px; box-sizing: border-box; box-shadow: 2px 2px 8px rgba(0,0,0,0.3); }
+.dice.face-1 { grid-template: 1fr / 1fr; place-items: center; }
+.dice.face-2 { grid-template: 1fr 1fr / 1fr; }
+.dice.face-2 .dot:nth-child(1) { justify-self: end; align-self: start; }
+.dice.face-2 .dot:nth-child(2) { justify-self: start; align-self: end; }
+.dice.face-3 { grid-template: 1fr 1fr 1fr / 1fr; }
+.dice.face-3 .dot:nth-child(1) { justify-self: end; align-self: start; }
+.dice.face-3 .dot:nth-child(2) { justify-self: center; align-self: center; }
+.dice.face-3 .dot:nth-child(3) { justify-self: start; align-self: end; }
+.dice.face-4 { grid-template: 1fr 1fr / 1fr 1fr; place-items: center; }
+.dice.face-5 { grid-template: 1fr 1fr 1fr / 1fr 1fr 1fr; }
+.dice.face-5 .dot:nth-child(1) { grid-area: 1/1; justify-self: center; align-self: center; }
+.dice.face-5 .dot:nth-child(2) { grid-area: 1/3; justify-self: center; align-self: center; }
+.dice.face-5 .dot:nth-child(3) { grid-area: 2/2; justify-self: center; align-self: center; }
+.dice.face-5 .dot:nth-child(4) { grid-area: 3/1; justify-self: center; align-self: center; }
+.dice.face-5 .dot:nth-child(5) { grid-area: 3/3; justify-self: center; align-self: center; }
+.dice.face-6 { grid-template: 1fr 1fr 1fr / 1fr 1fr; place-items: center; }
+.dot { width: 10px; height: 10px; background: #1a1a2e; border-radius: 50%; }
+@keyframes dice-roll { 0% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(90deg) scale(0.8); } 50% { transform: rotate(180deg) scale(1.1); } 75% { transform: rotate(270deg) scale(0.9); } 100% { transform: rotate(360deg) scale(1); } }
+.dice.rolling { animation: dice-roll 0.4s ease-in-out; }
+
+/* Tobi (bust) explosion effect */
+.tobi-explosion { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 10; border-radius: 12px; overflow: hidden; }
+.tobi-flash { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border-radius: 12px; animation: tobi-flash-anim 1.8s ease-out forwards; }
+@keyframes tobi-flash-anim { 0% { background: rgba(255,60,60,0.9); } 15% { background: rgba(255,120,0,0.7); } 40% { background: rgba(255,60,60,0.3); } 100% { background: transparent; } }
+.tobi-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 2.5em; font-weight: 900; color: #fff; text-shadow: 0 0 20px #ff0000, 0 0 40px #ff4500, 0 0 60px #ff0000; animation: tobi-text-anim 1.8s ease-out forwards; z-index: 2; }
+@keyframes tobi-text-anim { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0; } 10% { transform: translate(-50%,-50%) scale(1.6); opacity: 1; } 25% { transform: translate(-50%,-50%) scale(1); } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1.3); } }
+.tobi-ring { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border: 3px solid rgba(255,100,0,0.9); border-radius: 50%; transform: translate(-50%,-50%); animation: tobi-ring-anim 1s ease-out forwards; }
+@keyframes tobi-ring-anim { 0% { width: 10px; height: 10px; opacity: 1; border-width: 3px; } 100% { width: 200px; height: 200px; opacity: 0; border-width: 1px; } }
+.tobi-particle { position: absolute; border-radius: 50%; animation: tobi-particle-anim 1.2s ease-out forwards; }
+@keyframes tobi-particle-anim { 0% { opacity: 1; transform: translate(0,0) scale(1); } 100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0); } }
+.tobi-shake { animation: tobi-shake-anim 0.5s ease-out; }
+@keyframes tobi-shake-anim { 0%,100% { transform: translateX(0); } 10% { transform: translateX(-6px); } 20% { transform: translateX(6px); } 30% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 50% { transform: translateX(-3px); } 60% { transform: translateX(3px); } 70% { transform: translateX(-2px); } 80% { transform: translateX(2px); } }
+
+/* Riichi flash overlay */
+.riichi-flash { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 900; pointer-events: none; display: flex; justify-content: center; align-items: center; animation: riichi-flash-anim 1s ease-out forwards; }
+@keyframes riichi-flash-anim { 0% { background: rgba(243,156,18,0.5); } 100% { background: transparent; } }
+.riichi-flash-text { font-size: 4em; font-weight: 900; color: #fff; text-shadow: 0 0 30px #f39c12, 0 0 60px #f39c12, 0 0 90px #e67e22; animation: riichi-text-anim 1s ease-out forwards; }
+@keyframes riichi-text-anim { 0% { transform: scale(0.3); opacity: 0; } 20% { transform: scale(1.3); opacity: 1; } 40% { transform: scale(1); } 100% { opacity: 0; transform: scale(1.1); } }
+
+/* Agari effect overlay */
+.agari-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 900; pointer-events: none; overflow: hidden; }
+.agari-flash { position: absolute; top: 0; left: 0; right: 0; bottom: 0; animation: agari-flash-anim 1.5s ease-out forwards; display: flex; justify-content: center; align-items: center; }
+@keyframes agari-flash-anim { 0% { background: rgba(233,69,96,0.6); } 30% { background: rgba(233,69,96,0.2); } 100% { background: transparent; } }
+.agari-text { font-size: 5em; font-weight: 900; color: #fff; text-shadow: 0 0 40px #e94560, 0 0 80px #e94560, 0 0 120px #c0392b; animation: agari-text-anim 1.5s ease-out forwards; }
+@keyframes agari-text-anim { 0% { transform: scale(0) rotate(-10deg); opacity: 0; } 15% { transform: scale(1.4) rotate(3deg); opacity: 1; } 30% { transform: scale(1) rotate(0deg); } 100% { opacity: 0; transform: scale(1.2) translateY(-20px); } }
+.agari-particle { position: absolute; width: 8px; height: 8px; border-radius: 50%; animation: agari-particle-anim 1.5s ease-out forwards; }
+@keyframes agari-particle-anim { 0% { opacity: 1; transform: translate(0, 0) scale(1); } 100% { opacity: 0; transform: translate(var(--px), var(--py)) scale(0); } }
+
+/* History */
+.history-list { max-height: 300px; overflow-y: auto; }
+.history-item { background: #16213e; padding: 8px 12px; margin-bottom: 4px; border-radius: 6px; font-size: 0.85em; }
+.history-item .type { font-weight: bold; color: #e94560; }
+
+/* Toast */
+.toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #2ecc71; color: #fff; padding: 12px 24px; border-radius: 8px; z-index: 1000; display: none; font-size: 0.9em; }
+.toast.error { background: #c0392b; }
+.toast.show { display: block; animation: fadeInOut 2s; }
+@keyframes fadeInOut { 0% { opacity: 0; } 10% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Connection indicator */
+.conn-status { position: fixed; top: 8px; right: 8px; width: 12px; height: 12px; border-radius: 50%; background: #c0392b; }
+.conn-status.connected { background: #2ecc71; }
+
+/* Modal overlay */
+.modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
+.modal.active { display: flex; }
+.modal-content { background: #1a1a2e; border: 2px solid #0f3460; border-radius: 12px; padding: 20px; width: 90%; max-width: 400px; max-height: 80vh; overflow-y: auto; }
+
+/* QR */
+.qr-container { text-align: center; margin: 16px 0; }
+.qr-container img { border-radius: 8px; background: #fff; padding: 8px; max-width: 220px; }
+
+/* Swap selection */
+.swap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.swap-card { background: #16213e; border: 2px solid #333; border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; }
+.swap-card.selected { border-color: #e94560; background: #2a1a3e; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+</head>
+<body>
+
+<div class="conn-status" id="connStatus"></div>
+<div class="toast" id="toast"></div>
+
+<!-- Screen 1: Lobby -->
+<div class="screen active" id="lobbyScreen">
+  <h1>麻雀点数やり取り</h1>
+  <div class="lobby-actions">
+    <div>
+      <label>ルーム作成</label>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <select id="gameType" style="flex:1">
+          <option value="east_only">東風戦</option>
+          <option value="east_south">半荘戦</option>
+        </select>
+        <input id="startPts" type="number" value="25000" style="flex:1" placeholder="初期持ち点">
+      </div>
+      <div style="margin-top:10px;padding:10px;background:#1a1a2e;border-radius:8px;border:1px solid #333">
+        <div style="font-size:0.85em;color:#aaa;margin-bottom:6px">ルールオプション</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9em;cursor:pointer;margin-bottom:4px">
+          <input type="checkbox" id="optHakoire" checked> 箱割れ即終了 (飛び)
+        </label>
+        <div id="extensionNote" style="font-size:0.8em;color:#888;margin:4px 0">※東風戦: 全員30000点未満で南入 (常時)</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9em;cursor:pointer;margin-bottom:4px">
+          <input type="checkbox" id="optShanyu"> <span id="shanyuLabel">西入あり</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9em;cursor:pointer">
+          <input type="checkbox" id="optPeinyu"> <span id="peinyuLabel">北入あり</span>
+        </label>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="createRoom()">ルーム作成</button>
+    </div>
+    <div style="border-top:1px solid #333;padding-top:12px">
+      <label>ルームに参加</label>
+      <input id="joinCode" placeholder="ルームコード (6桁)" maxlength="6" style="text-transform:uppercase;text-align:center;font-size:1.3em;letter-spacing:4px">
+      <input id="joinName" placeholder="あなたの名前">
+      <button class="btn btn-secondary" style="width:100%;margin-top:4px" onclick="joinRoom()">参加</button>
+    </div>
+  </div>
+</div>
+
+<!-- Screen 2: Seat Selection -->
+<div class="screen" id="seatScreen">
+  <h1>席を選んでください</h1>
+  <div class="room-code-display" id="seatRoomCode" style="font-size:1.2em;padding:8px;letter-spacing:4px;cursor:pointer" onclick="copyRoomCode()"></div>
+  <input id="seatName" placeholder="あなたの名前" style="text-align:center;font-size:1.1em">
+  <div class="seat-grid" id="seatGrid"></div>
+  <button class="btn btn-secondary btn-small" style="width:100%;margin-top:8px" onclick="skipSeatSelection()">席を選ばずに観戦する</button>
+</div>
+
+<!-- Screen 3: Game -->
+<div class="screen" id="gameScreen">
+  <div class="round-info" id="roundInfo">
+    <div><span id="riWind">東1局</span>
+    <span id="riHonba">0本場</span>
+    <span id="riKyotaku">供託0</span></div>
+    <div id="optionsDisplay" style="display:none;font-size:0.75em;color:#aaa;margin-top:4px"></div>
+  </div>
+
+  <div class="scoreboard" id="scoreboard"></div>
+
+  <div class="actions">
+    <button class="btn btn-primary" onclick="showAction('ron')">ロン</button>
+    <button class="btn btn-primary" onclick="showAction('tsumo')">ツモ</button>
+    <button class="btn btn-secondary" onclick="showAction('draw')">流局</button>
+    <button class="btn btn-danger btn-small" onclick="doUndo()">取消</button>
+    <button class="btn btn-small" style="background:#555" onclick="showHistory()">履歴</button>
+    <button class="btn btn-small" style="background:#555" onclick="showSwapModal()">席替</button>
+    <button class="btn btn-small" style="background:#555" onclick="showQR()">QR</button>
+    <button class="btn btn-small" id="diffToggleBtn" style="background:#555" onclick="toggleDiffMode()">点差</button>
+    <button class="btn btn-small" style="background:#555" onclick="showChart()">グラフ</button>
+    <button class="btn btn-small" style="background:#555" onclick="syncGameState()">同期</button>
+    <button class="btn btn-small" style="background:#555" onclick="rollDice()">🎲</button>
+  </div>
+
+  <div id="actionPanel" style="display:none"></div>
+  <div class="room-code-display" id="roomCodeDisplay" style="font-size:1em;padding:8px;margin:8px 0;letter-spacing:4px;cursor:pointer" onclick="copyRoomCode()"></div>
+</div>
+
+<!-- Modal for history -->
+<div class="modal" id="historyModal">
+  <div class="modal-content">
+    <h2>対局履歴</h2>
+    <div class="history-list" id="historyList"></div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:12px" onclick="closeModal('historyModal')">閉じる</button>
+  </div>
+</div>
+
+<!-- Modal for QR code -->
+<div class="modal" id="qrModal">
+  <div class="modal-content">
+    <h2>ルーム参加用QR</h2>
+    <div class="qr-container" id="qrContainer"></div>
+    <p style="text-align:center;color:#aaa;font-size:0.85em;margin:8px 0">スマホのカメラでスキャンして参加</p>
+    <div class="room-code-display" style="font-size:1.2em;padding:8px;letter-spacing:4px;cursor:pointer" id="qrRoomCode" onclick="copyRoomCode()"></div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:12px" onclick="closeModal('qrModal')">閉じる</button>
+  </div>
+</div>
+
+<!-- Modal for seat swap -->
+<div class="modal" id="swapModal">
+  <div class="modal-content">
+    <h2>席替え</h2>
+    <p style="text-align:center;color:#aaa;font-size:0.85em;margin-bottom:12px">入れ替える2人を選んでください</p>
+    <div class="swap-grid" id="swapGrid"></div>
+    <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="submitSwap()" id="swapBtn" disabled>席を入れ替える</button>
+    <button class="btn btn-secondary btn-small" style="width:100%;margin-top:4px" onclick="closeModal('swapModal')">キャンセル</button>
+  </div>
+</div>
+
+<!-- Modal for chart -->
+<div class="modal" id="chartModal">
+  <div class="modal-content" style="max-width:500px">
+    <h2>点数推移</h2>
+    <canvas id="chartCanvas" width="460" height="300" style="width:100%;background:#16213e;border-radius:8px"></canvas>
+    <div id="chartLegend" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;font-size:0.8em"></div>
+    <button class="btn btn-primary btn-small" style="width:100%;margin-top:12px" onclick="downloadChart()">画像を保存</button>
+    <button class="btn btn-secondary btn-small" style="width:100%;margin-top:4px" onclick="closeModal('chartModal')">閉じる</button>
+  </div>
+</div>
+
+<!-- Modal for dice -->
+<div class="modal" id="diceModal">
+  <div class="modal-content" style="max-width:320px;text-align:center">
+    <h2>サイコロ</h2>
+    <div id="diceArea" style="display:flex;justify-content:center;gap:24px;margin:20px 0">
+      <div class="dice" id="dice1">1</div>
+      <div class="dice" id="dice2">1</div>
+    </div>
+    <div id="diceTotal" style="font-size:1.4em;font-weight:bold;margin:8px 0;color:#fff"></div>
+    <button class="btn btn-primary btn-small" style="width:100%;margin-top:8px" onclick="rollDice()">もう一度振る</button>
+    <button class="btn btn-secondary btn-small" style="width:100%;margin-top:4px" onclick="closeModal('diceModal')">閉じる</button>
+  </div>
+</div>
+
+<script>
+const WIND_NAMES = {E:'東',S:'南',W:'西',N:'北'};
+const WIND_ORDER = ['E','S','W','N'];
+const SEAT_WINDS = ['東','南','西','北'];
+
+let gameState = null;
+let gameId = null;
+let roomCode = null;
+let myName = null;
+let mySeat = null;
+let ws = null;
+let lastDeltas = {};
+let keepAliveTimer = null;
+let riichiSeats = new Set();
+let tenpaiSeats = new Set();
+let showDiffMode = false;
+
+// Update extension option labels based on game type
+function updateExtensionLabels() {
+  const gt = document.getElementById('gameType').value;
+  const note = document.getElementById('extensionNote');
+  const shanyuLabel = document.getElementById('shanyuLabel');
+  const peinyuLabel = document.getElementById('peinyuLabel');
+  if (gt === 'east_only') {
+    note.textContent = '※東風戦: 全員30000点未満で南入 (常時)';
+    shanyuLabel.textContent = '西入あり';
+    peinyuLabel.textContent = '北入あり';
+  } else {
+    note.textContent = '※半荘戦: 南場は通常通り';
+    shanyuLabel.textContent = '西入あり';
+    peinyuLabel.textContent = '北入あり';
+  }
+}
+document.getElementById('gameType').addEventListener('change', updateExtensionLabels);
+
+// Common point values for one-tap selection
+const POINT_TABLE_RON = [
+  {pts: 1000, label: '1翻30符'},
+  {pts: 1300, label: '1翻40符'},
+  {pts: 1600, label: '1翻50符'},
+  {pts: 2000, label: '2翻30符/1翻子'},
+  {pts: 2600, label: '2翻40符'},
+  {pts: 3200, label: '2翻50符'},
+  {pts: 3900, label: '3翻30符'},
+  {pts: 5200, label: '3翻40符'},
+  {pts: 7700, label: '3翻60符'},
+  {pts: 8000, label: '満貫'},
+  {pts: 12000, label: '跳満'},
+  {pts: 16000, label: '倍満'},
+  {pts: 24000, label: '三倍満'},
+  {pts: 32000, label: '役満'},
+];
+
+const POINT_TABLE_RON_DEALER = [
+  {pts: 1500, label: '1翻30符'},
+  {pts: 2000, label: '1翻40符'},
+  {pts: 2400, label: '1翻50符'},
+  {pts: 2900, label: '2翻30符'},
+  {pts: 3900, label: '2翻40符'},
+  {pts: 4800, label: '2翻50符'},
+  {pts: 5800, label: '3翻30符'},
+  {pts: 7700, label: '3翻40符'},
+  {pts: 12000, label: '満貫'},
+  {pts: 18000, label: '跳満'},
+  {pts: 24000, label: '倍満'},
+  {pts: 36000, label: '三倍満'},
+  {pts: 48000, label: '役満'},
+];
+
+const POINT_TABLE_TSUMO = [
+  {label: '1翻30符', dealer: 500, non: 300},
+  {label: '1翻40符', dealer: 700, non: 400},
+  {label: '2翻30符', dealer: 1000, non: 500},
+  {label: '2翻40符', dealer: 1300, non: 700},
+  {label: '3翻30符', dealer: 2000, non: 1000},
+  {label: '3翻40符', dealer: 2600, non: 1300},
+  {label: '満貫', dealer: 4000, non: 2000},
+  {label: '跳満', dealer: 6000, non: 3000},
+  {label: '倍満', dealer: 8000, non: 4000},
+  {label: '三倍満', dealer: 12000, non: 6000},
+  {label: '役満', dealer: 16000, non: 8000},
+];
+
+const POINT_TABLE_TSUMO_DEALER = [
+  {label: '1翻30符', all: 500},
+  {label: '1翻40符', all: 700},
+  {label: '2翻30符', all: 1000},
+  {label: '2翻40符', all: 1300},
+  {label: '3翻30符', all: 2000},
+  {label: '3翻40符', all: 2600},
+  {label: '満貫', all: 4000},
+  {label: '跳満', all: 6000},
+  {label: '倍満', all: 8000},
+  {label: '三倍満', all: 12000},
+  {label: '役満', all: 16000},
+];
+
+function toast(msg, isError=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.className = 'toast', 2200);
+}
+
+function copyRoomCode() {
+  if (roomCode) {
+    navigator.clipboard.writeText(roomCode).then(() => toast('コードをコピーしました'));
+  }
+}
+
+// --- Room Creation (no player names) ---
+async function createRoom() {
+  const gameType = document.getElementById('gameType').value;
+  const startPts = parseInt(document.getElementById('startPts').value) || 25000;
+  const options = {
+    hakoire_end: document.getElementById('optHakoire').checked,
+    shanyu: document.getElementById('optShanyu').checked,
+    peinyu: document.getElementById('optPeinyu').checked,
+  };
+
+  try {
+    const res = await fetch('/api/v1/games', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({starting_points: startPts, game_type: gameType, options}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    gameId = data.game_id;
+    roomCode = data.room_code;
+    gameState = data.game_state;
+    showSeatSelection();
+    connectWS();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// --- Room Join ---
+async function joinRoom() {
+  const code = document.getElementById('joinCode').value.trim().toUpperCase();
+  const name = document.getElementById('joinName').value.trim() || '';
+  if (code.length < 4) { toast('コードを入力してください', true); return; }
+
+  try {
+    const res = await fetch(`/api/v1/rooms/${code}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'ルームが見つかりません');
+    gameId = data.game_id;
+    roomCode = code;
+    gameState = data.game_state;
+    myName = name;
+
+    // Auto-reclaim: if name matches an existing seat, go directly to game
+    if (myName) {
+      const existingSeat = gameState.players.find(p => p.name === myName);
+      if (existingSeat !== undefined) {
+        mySeat = existingSeat.seat;
+        connectWS();
+        showGameScreen();
+        toast('再入室しました');
+        return;
+      }
+      document.getElementById('seatName').value = myName;
+    }
+    showSeatSelection();
+    connectWS();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// --- Seat Selection Screen ---
+function showSeatSelection() {
+  document.getElementById('lobbyScreen').classList.remove('active');
+  document.getElementById('gameScreen').classList.remove('active');
+  document.getElementById('seatScreen').classList.add('active');
+  document.getElementById('seatRoomCode').textContent = `ROOM: ${roomCode}`;
+  renderSeatGrid();
+}
+
+function renderSeatGrid() {
+  const grid = document.getElementById('seatGrid');
+  grid.innerHTML = '';
+  const defaultNames = ['プレイヤー1','プレイヤー2','プレイヤー3','プレイヤー4'];
+  for (let i = 0; i < 4; i++) {
+    const card = document.createElement('div');
+    const player = gameState.players[i];
+    const isTaken = !defaultNames.includes(player.name);
+    const isMine = mySeat === i;
+    card.className = 'seat-card' + (isMine ? ' mine' : isTaken ? ' taken' : '');
+    card.innerHTML = `
+      <div class="seat-wind">${SEAT_WINDS[i]}</div>
+      <div class="seat-name">${isTaken ? escHtml(player.name) : '空席'}</div>
+    `;
+    card.onclick = () => claimSeat(i);
+    grid.appendChild(card);
+  }
+}
+
+async function claimSeat(seat) {
+  const name = document.getElementById('seatName').value.trim();
+  if (!name) { toast('名前を入力してください', true); return; }
+  myName = name;
+
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}/seats/${seat}/claim`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: myName}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    mySeat = seat;
+    gameState = data.game_state;
+    showGameScreen();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+function skipSeatSelection() {
+  myName = myName || 'ゲスト';
+  showGameScreen();
+}
+
+// --- WebSocket ---
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${location.host}/ws/rooms/${roomCode}?player_name=${encodeURIComponent(myName || '')}`;
+  ws = new WebSocket(url);
+  ws.onopen = () => {
+    document.getElementById('connStatus').classList.add('connected');
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
+    keepAliveTimer = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({type:'ping'})); }, 25000);
+  };
+  ws.onclose = () => {
+    document.getElementById('connStatus').classList.remove('connected');
+    if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+    setTimeout(connectWS, 2000);
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'pong') return;
+    if (msg.type === 'riichi_toggle') {
+      if (msg.active) {
+        riichiSeats.add(msg.seat);
+        const p = gameState && gameState.players.find(pl => pl.seat === msg.seat);
+        showRiichiEffect(p ? p.name : '');
+      } else {
+        riichiSeats.delete(msg.seat);
+      }
+      renderGame();
+      return;
+    }
+    if (msg.type === 'tenpai_toggle') {
+      if (msg.active) tenpaiSeats.add(msg.seat); else tenpaiSeats.delete(msg.seat);
+      renderGame();
+      return;
+    }
+    if (msg.game_state) {
+      gameState = msg.game_state;
+      if (msg.round_result) {
+        riichiSeats.clear();
+        tenpaiSeats.clear();
+        if (msg.type === 'ron' || msg.type === 'tsumo') showAgariEffect(msg.type);
+        computeDeltas(msg.round_result.point_changes);
+      }
+      renderGame();
+      // Also update seat grid if visible
+      if (document.getElementById('seatScreen').classList.contains('active')) {
+        renderSeatGrid();
+      }
+      if (msg.type === 'undo') {
+        riichiSeats.clear();
+        tenpaiSeats.clear();
+        toast('取り消しされました');
+      }
+      if (msg.type === 'seat_claimed') toast(`${msg.name} が ${SEAT_WINDS[msg.seat]} に着席`);
+      if (msg.type === 'seats_swapped') toast('席替えが行われました');
+    }
+    if (msg.type === 'player_joined') toast(`${msg.player_name} が参加`);
+    if (msg.type === 'player_left') toast(`${msg.player_name} が退出`);
+  };
+}
+
+// --- Game Screen ---
+function showGameScreen() {
+  document.getElementById('lobbyScreen').classList.remove('active');
+  document.getElementById('seatScreen').classList.remove('active');
+  document.getElementById('gameScreen').classList.add('active');
+  document.getElementById('roomCodeDisplay').textContent = `ROOM: ${roomCode}`;
+  renderGame();
+}
+
+function computeDeltas(pointChanges) {
+  lastDeltas = {};
+  if (pointChanges) {
+    for (const [seat, delta] of Object.entries(pointChanges)) {
+      lastDeltas[parseInt(seat)] = delta;
+    }
+  }
+}
+
+function renderGame() {
+  if (!gameState) return;
+  const gs = gameState;
+
+  const windName = WIND_NAMES[gs.current_round_wind] || '東';
+  const dealerNum = (gs.current_dealer % 4) + 1;
+  document.getElementById('riWind').textContent = `${windName}${dealerNum}局`;
+  document.getElementById('riHonba').textContent = `${gs.current_honba}本場`;
+  document.getElementById('riKyotaku').textContent = `供託${gs.current_kyotaku}`;
+
+  // Show active options
+  const optDisp = document.getElementById('optionsDisplay');
+  if (gs.options) {
+    const tags = [];
+    if (gs.options.hakoire_end) tags.push('飛びあり');
+    else tags.push('飛びなし');
+    if (gs.options.shanyu) tags.push('西入あり');
+    if (gs.options.peinyu) tags.push('北入あり');
+    if (tags.length) {
+      optDisp.textContent = tags.join(' / ');
+      optDisp.style.display = '';
+    } else {
+      optDisp.style.display = 'none';
+    }
+  }
+
+  const sb = document.getElementById('scoreboard');
+  sb.innerHTML = '';
+  const seatWinds = computeSeatWinds(gs);
+  for (const p of gs.players) {
+    const card = document.createElement('div');
+    const delta = lastDeltas[p.seat];
+    let deltaHtml = '';
+    if (delta && delta !== 0) {
+      const cls = delta > 0 ? 'plus' : 'minus';
+      deltaHtml = `<div class="delta ${cls}">${delta > 0 ? '+' : ''}${delta.toLocaleString()}</div>`;
+    }
+    const isRiichi = riichiSeats.has(p.seat);
+    card.className = 'player-card' + (p.seat === gs.current_dealer ? ' dealer' : '') + (isRiichi ? ' riichi-active' : '');
+    const isTenpai = tenpaiSeats.has(p.seat);
+    const canControl = mySeat === null || mySeat === p.seat;
+    const disabledCls = canControl ? '' : ' disabled';
+    const riichiOnclick = canControl ? `onclick="toggleRiichi(${p.seat})"` : '';
+    const tenpaiOnclick = canControl ? `onclick="toggleTenpai(${p.seat})"` : '';
+    // Diff mode: show point difference from reference player
+    let pointsDisplay;
+    const isRef = showDiffMode && diffRefSeat === p.seat;
+    if (showDiffMode && diffRefSeat !== null && p.seat !== diffRefSeat) {
+      const refPlayer = gs.players.find(pl => pl.seat === diffRefSeat);
+      const diff = p.points - refPlayer.points;
+      const diffSign = diff > 0 ? '+' : '';
+      pointsDisplay = `<div class="points${diff < 0 ? ' negative' : ''}" style="font-size:0.95em">${diffSign}${diff.toLocaleString()}</div>`;
+    } else {
+      pointsDisplay = `<div class="points${p.points < 0 ? ' negative' : ''}">${p.points.toLocaleString()}</div>`;
+    }
+    if (isRef) {
+      card.style.outline = '2px solid #e94560';
+      card.style.outlineOffset = '-2px';
+    }
+    if (showDiffMode) {
+      card.style.cursor = 'pointer';
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.riichi-btn, .tenpai-btn')) return;
+        diffRefSeat = p.seat;
+        renderGame();
+      });
+    }
+
+    card.innerHTML = `
+      <div class="wind">${WIND_NAMES[seatWinds[p.seat]] || ''}</div>
+      <div class="name">${escHtml(p.name)}</div>
+      ${pointsDisplay}
+      ${deltaHtml}
+      <div class="toggle-row">
+        <button class="riichi-btn${isRiichi ? ' active' : ''}${disabledCls}" ${riichiOnclick}>立直</button>
+        <button class="tenpai-btn${isTenpai ? ' active' : ''}${disabledCls}" ${tenpaiOnclick}>聴牌</button>
+      </div>
+    `;
+    sb.appendChild(card);
+  }
+
+  // Show/hide action buttons based on game status
+  if (gs.status === 'finished') {
+    document.querySelector('.actions').style.display = 'none';
+    document.getElementById('actionPanel').style.display = 'none';
+    // Show finished banner if not already shown
+    if (!document.getElementById('finishedBanner')) {
+      const banner = document.createElement('div');
+      banner.id = 'finishedBanner';
+      banner.style.cssText = 'text-align:center;padding:16px;background:linear-gradient(135deg,#e94560,#0f3460);border-radius:12px;margin:12px 0;font-size:1.2em;font-weight:bold';
+      const hasBust = gs.players.some(p => p.points < 0);
+      // Trigger tobi explosion on busted players
+      if (hasBust) {
+        gs.players.forEach((p, i) => {
+          if (p.points < 0) setTimeout(() => showTobiEffect(p.seat), 200);
+        });
+      }
+      banner.innerHTML = `${hasBust ? '箱割れ — 対局終了' : '対局終了'}<br><button class="btn btn-small" style="background:#d35400;margin-top:8px" onclick="showChart()">点数推移グラフ</button>
+        <button class="btn btn-small" style="background:#555;margin-top:8px;margin-left:4px" onclick="showHistory()">履歴</button>`;
+      document.getElementById('scoreboard').after(banner);
+      // Auto-show chart on game end
+      setTimeout(() => showChart(), 500);
+    }
+  } else {
+    document.querySelector('.actions').style.display = '';
+    document.getElementById('actionPanel').style.display = 'none';
+    const existing = document.getElementById('finishedBanner');
+    if (existing) existing.remove();
+  }
+}
+
+function computeSeatWinds(gs) {
+  const winds = {};
+  for (let i = 0; i < 4; i++) {
+    const offset = (i - gs.current_dealer + 4) % 4;
+    winds[i] = WIND_ORDER[offset];
+  }
+  return winds;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// --- QR Code ---
+function showQR() {
+  const container = document.getElementById('qrContainer');
+  container.innerHTML = '<p style="color:#aaa">読み込み中...</p>';
+  document.getElementById('qrRoomCode').textContent = `ROOM: ${roomCode}`;
+  document.getElementById('qrModal').classList.add('active');
+
+  const joinUrl = `${location.origin}/game?room=${roomCode}`;
+
+  // Try server-side QR first
+  const img = new Image();
+  img.src = `/api/v1/games/${gameId}/qr`;
+  img.alt = 'QR Code';
+  img.onload = () => { container.innerHTML = ''; container.appendChild(img); };
+  img.onerror = () => {
+    // Fallback: use QR generation via canvas
+    try {
+      const qrImg = generateQRFallback(joinUrl);
+      container.innerHTML = '';
+      container.appendChild(qrImg);
+    } catch (e) {
+      container.innerHTML = `<p style="color:#aaa;word-break:break-all;font-size:0.85em">${escHtml(joinUrl)}</p>`;
+    }
+  };
+}
+
+function generateQRFallback(text) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const div = document.createElement('div');
+  div.innerHTML = qr.createImgTag(6, 8);
+  const img = div.querySelector('img');
+  img.style.borderRadius = '8px';
+  img.style.background = '#fff';
+  img.style.padding = '8px';
+  img.style.maxWidth = '220px';
+  return img;
+}
+
+// --- Seat Swap ---
+let swapSelected = [];
+
+function showSwapModal() {
+  swapSelected = [];
+  const grid = document.getElementById('swapGrid');
+  grid.innerHTML = '';
+  gameState.players.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'swap-card';
+    card.dataset.seat = p.seat;
+    card.innerHTML = `<div style="font-weight:bold">${SEAT_WINDS[p.seat]}</div><div style="margin-top:4px">${escHtml(p.name)}</div>`;
+    card.onclick = () => toggleSwapSelect(card, p.seat);
+    grid.appendChild(card);
+  });
+  document.getElementById('swapBtn').disabled = true;
+  document.getElementById('swapModal').classList.add('active');
+}
+
+function toggleSwapSelect(card, seat) {
+  const idx = swapSelected.indexOf(seat);
+  if (idx >= 0) {
+    swapSelected.splice(idx, 1);
+    card.classList.remove('selected');
+  } else if (swapSelected.length < 2) {
+    swapSelected.push(seat);
+    card.classList.add('selected');
+  }
+  const btn = document.getElementById('swapBtn');
+  if (swapSelected.length === 2) {
+    btn.disabled = false;
+    btn.removeAttribute('disabled');
+  } else {
+    btn.disabled = true;
+  }
+}
+
+async function submitSwap() {
+  if (swapSelected.length !== 2) return;
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}/seats/swap`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({seat_a: swapSelected[0], seat_b: swapSelected[1]}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    gameState = data.game_state;
+    // Update mySeat if I was swapped
+    if (mySeat === swapSelected[0]) mySeat = swapSelected[1];
+    else if (mySeat === swapSelected[1]) mySeat = swapSelected[0];
+    renderGame();
+    closeModal('swapModal');
+    toast('席替え完了');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// --- Action Panels ---
+function showAction(type) {
+  const panel = document.getElementById('actionPanel');
+  panel.style.display = 'block';
+
+  if (type === 'ron') renderRonPanel(panel);
+  else if (type === 'tsumo') renderTsumoPanel(panel);
+  else if (type === 'draw') renderDrawPanel(panel);
+}
+
+function renderRonPanel(panel) {
+  const gs = gameState;
+  let html = '<h2>ロン</h2>';
+
+  html += '<label>和了者（複数選択でダブロン・トリプルロン）</label><div class="player-chips" id="ronWinner">';
+  gs.players.forEach(p => {
+    html += `<div class="chip" data-seat="${p.seat}" onclick="toggleRonWinner(this)">${escHtml(p.name)}</div>`;
+  });
+  html += '</div>';
+
+  html += '<label>放銃者</label><div class="player-chips" id="ronLoser">';
+  gs.players.forEach(p => {
+    html += `<div class="chip" data-seat="${p.seat}" onclick="selectChip(this,'ronLoser')">${escHtml(p.name)}</div>`;
+  });
+  html += '</div>';
+
+  html += '<div id="ronWinnerPoints"></div>';
+
+  html += `<button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="submitRon()">確定</button>`;
+  html += `<button class="btn btn-secondary btn-small" style="width:100%;margin-top:4px" onclick="hideAction()">キャンセル</button>`;
+  panel.innerHTML = html;
+
+  // Auto-select my seat as winner
+  if (mySeat !== null) {
+    const myChip = document.querySelector(`#ronWinner .chip[data-seat="${mySeat}"]`);
+    if (myChip) { myChip.classList.add('selected'); renderRonWinnerPoints(); }
+  }
+}
+
+function toggleRonWinner(el) {
+  el.classList.toggle('selected');
+  renderRonWinnerPoints();
+}
+
+function renderRonWinnerPoints() {
+  const container = document.getElementById('ronWinnerPoints');
+  const selected = Array.from(document.querySelectorAll('#ronWinner .chip.selected'));
+  if (selected.length === 0) { container.innerHTML = ''; return; }
+
+  const gs = gameState;
+  let html = '';
+  selected.forEach((chip, idx) => {
+    const seat = parseInt(chip.dataset.seat);
+    const player = gs.players.find(p => p.seat === seat);
+    const isDealer = seat === gs.current_dealer;
+    const suffix = `_w${seat}`;
+
+    html += `<div style="border:1px solid #2a3a5c;border-radius:8px;padding:8px;margin:8px 0">`;
+    html += `<label style="color:#4fc3f7;font-weight:bold">${escHtml(player.name)} の点数${isDealer ? ' (親)' : ' (子)'}</label>`;
+
+    if (isDealer) {
+      html += `<div class="point-grid" id="ronPts${suffix}">`;
+      POINT_TABLE_RON_DEALER.forEach(p => {
+        html += `<div class="point-btn" data-pts="${p.pts}" onclick="selectPoint(this,'ronPts${suffix}')">
+          ${p.pts.toLocaleString()}<span class="label">${p.label}</span></div>`;
+      });
+      html += '</div>';
+    } else {
+      html += `<div class="point-grid" id="ronPts${suffix}">`;
+      POINT_TABLE_RON.forEach(p => {
+        html += `<div class="point-btn" data-pts="${p.pts}" onclick="selectPoint(this,'ronPts${suffix}')">
+          ${p.pts.toLocaleString()}<span class="label">${p.label}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    html += `<label>カスタム点数</label>`;
+    html += `<input type="number" id="ronCustomPts${suffix}" placeholder="例: 5200" step="100">`;
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function renderTsumoPanel(panel) {
+  const gs = gameState;
+  let html = '<h2>ツモ</h2>';
+
+  html += '<label>和了者</label><div class="player-chips" id="tsumoWinner">';
+  gs.players.forEach(p => {
+    html += `<div class="chip" data-seat="${p.seat}" onclick="selectChipTsumo(this)">${escHtml(p.name)}</div>`;
+  });
+  html += '</div>';
+
+  html += '<label>点数 (子ツモ)</label>';
+  html += '<div class="point-grid" id="tsumoPointsNon">';
+  POINT_TABLE_TSUMO.forEach((p, i) => {
+    html += `<div class="point-btn" data-idx="${i}" onclick="selectPoint(this,'tsumoPointsNon')">
+      ${p.dealer.toLocaleString()}/${p.non.toLocaleString()}<span class="label">${p.label}</span></div>`;
+  });
+  html += '</div>';
+
+  html += '<label>点数 (親ツモ)</label>';
+  html += '<div class="point-grid" id="tsumoPointsDealer" style="display:none">';
+  POINT_TABLE_TSUMO_DEALER.forEach((p, i) => {
+    html += `<div class="point-btn" data-idx="${i}" onclick="selectPoint(this,'tsumoPointsDealer')">
+      ${p.all.toLocaleString()}オール<span class="label">${p.label}</span></div>`;
+  });
+  html += '</div>';
+
+  html += '<label>またはカスタム (翻/符)</label>';
+  html += '<div style="display:flex;gap:8px">';
+  html += '<input type="number" id="tsumoHan" placeholder="翻" min="1" style="flex:1">';
+  html += '<input type="number" id="tsumoFu" placeholder="符" min="20" step="10" value="30" style="flex:1">';
+  html += '</div>';
+
+  html += `<button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="submitTsumo()">確定</button>`;
+  html += `<button class="btn btn-secondary btn-small" style="width:100%;margin-top:4px" onclick="hideAction()">キャンセル</button>`;
+  panel.innerHTML = html;
+
+  // Auto-select my seat as winner
+  if (mySeat !== null) {
+    const myChip = document.querySelector(`#tsumoWinner .chip[data-seat="${mySeat}"]`);
+    if (myChip) selectChipTsumo(myChip);
+  }
+}
+
+function renderDrawPanel(panel) {
+  let html = '<h2>流局</h2>';
+  html += '<p style="text-align:center;color:#aaa;font-size:0.85em;margin:8px 0">各プレイヤーの「聴牌」ボタンで宣言してください</p>';
+  html += `<button class="btn btn-secondary" style="width:100%;margin-top:12px" onclick="submitDraw()">確定</button>`;
+  html += `<button class="btn btn-secondary btn-small" style="width:100%;margin-top:4px" onclick="hideAction()">キャンセル</button>`;
+  panel.innerHTML = html;
+}
+
+function selectChip(el, groupId) {
+  document.querySelectorAll(`#${groupId} .chip`).forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+
+}
+
+function selectChipTsumo(el) {
+  document.querySelectorAll('#tsumoWinner .chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  const seat = parseInt(el.dataset.seat);
+  const isDealer = seat === gameState.current_dealer;
+  document.getElementById('tsumoPointsNon').style.display = isDealer ? 'none' : 'grid';
+  document.getElementById('tsumoPointsDealer').style.display = isDealer ? 'grid' : 'none';
+}
+
+function toggleChip(el) {
+  el.classList.toggle('selected');
+}
+
+function selectPoint(el, groupId) {
+  document.querySelectorAll(`#${groupId} .point-btn`).forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function hideAction() {
+  document.getElementById('actionPanel').style.display = 'none';
+}
+
+function getSelectedSeat(groupId) {
+  const sel = document.querySelector(`#${groupId} .chip.selected`);
+  return sel ? parseInt(sel.dataset.seat) : null;
+}
+
+function getSelectedSeats(groupId) {
+  return Array.from(document.querySelectorAll(`#${groupId} .chip.selected`))
+    .map(c => parseInt(c.dataset.seat));
+}
+
+function showRiichiEffect(playerName) {
+  const el = document.createElement('div');
+  el.className = 'riichi-flash';
+  el.innerHTML = `<div class="riichi-flash-text">立直${playerName ? ' ' + playerName : ''}</div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+
+function showAgariEffect(type) {
+  const el = document.createElement('div');
+  el.className = 'agari-overlay';
+  const label = type === 'ron' ? 'ロン' : type === 'tsumo' ? 'ツモ' : '和了';
+  el.innerHTML = `<div class="agari-flash"><div class="agari-text">${label}!!</div></div>`;
+  const colors = ['#e94560', '#f39c12', '#2ecc71', '#3498db', '#fff', '#e74c3c'];
+  for (let i = 0; i < 30; i++) {
+    const p = document.createElement('div');
+    p.className = 'agari-particle';
+    p.style.background = colors[Math.floor(Math.random() * colors.length)];
+    p.style.left = '50%';
+    p.style.top = '50%';
+    p.style.setProperty('--px', (Math.random() - 0.5) * 600 + 'px');
+    p.style.setProperty('--py', (Math.random() - 0.5) * 600 + 'px');
+    p.style.animationDelay = Math.random() * 0.3 + 's';
+    p.style.width = (4 + Math.random() * 8) + 'px';
+    p.style.height = p.style.width;
+    el.appendChild(p);
+  }
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1800);
+}
+
+// --- Tobi (bust) explosion effect ---
+function showTobiEffect(seat) {
+  const cards = document.querySelectorAll('.player-card');
+  const card = cards[seat];
+  if (!card) return;
+
+  // Shake the card
+  card.classList.add('tobi-shake');
+  setTimeout(() => card.classList.remove('tobi-shake'), 500);
+
+  // Create explosion overlay inside the card
+  const explosion = document.createElement('div');
+  explosion.className = 'tobi-explosion';
+
+  // Flash
+  explosion.innerHTML = '<div class="tobi-flash"></div><div class="tobi-text">飛</div>';
+
+  // Expanding ring
+  const ring = document.createElement('div');
+  ring.className = 'tobi-ring';
+  explosion.appendChild(ring);
+
+  // Particles
+  const colors = ['#ff0000', '#ff4500', '#ff6600', '#ffaa00', '#ffcc00', '#fff'];
+  for (let i = 0; i < 20; i++) {
+    const p = document.createElement('div');
+    p.className = 'tobi-particle';
+    p.style.background = colors[Math.floor(Math.random() * colors.length)];
+    p.style.left = '50%';
+    p.style.top = '50%';
+    p.style.setProperty('--tx', (Math.random() - 0.5) * 160 + 'px');
+    p.style.setProperty('--ty', (Math.random() - 0.5) * 120 + 'px');
+    p.style.animationDelay = Math.random() * 0.2 + 's';
+    const size = (3 + Math.random() * 6) + 'px';
+    p.style.width = size;
+    p.style.height = size;
+    explosion.appendChild(p);
+  }
+
+  card.appendChild(explosion);
+  setTimeout(() => explosion.remove(), 2000);
+}
+
+// --- Diff mode (点差表示) ---
+let diffRefSeat = null;
+
+function toggleDiffMode() {
+  showDiffMode = !showDiffMode;
+  if (showDiffMode) {
+    // Use mySeat if seated, otherwise default to seat 0
+    diffRefSeat = mySeat !== null ? mySeat : 0;
+  }
+  const btn = document.getElementById('diffToggleBtn');
+  btn.style.background = showDiffMode ? '#e94560' : '#555';
+  renderGame();
+}
+
+function toggleRiichi(seat) {
+  const active = !riichiSeats.has(seat);
+  if (active) riichiSeats.add(seat); else riichiSeats.delete(seat);
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type: 'riichi_toggle', seat, active}));
+  }
+  if (active) {
+    const p = gameState && gameState.players.find(pl => pl.seat === seat);
+    showRiichiEffect(p ? p.name : '');
+  }
+  renderGame();
+}
+
+function toggleTenpai(seat) {
+  const active = !tenpaiSeats.has(seat);
+  if (active) tenpaiSeats.add(seat); else tenpaiSeats.delete(seat);
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type: 'tenpai_toggle', seat, active}));
+  }
+  renderGame();
+}
+
+function getRiichiSeatsFromBoard() {
+  return Array.from(riichiSeats);
+}
+
+function getTenpaiSeatsFromBoard() {
+  return Array.from(tenpaiSeats);
+}
+
+function ronPointsToHanFu(pts, isDealer) {
+  const table = isDealer ? [
+    [1500,1,30],[2000,1,40],[2400,1,50],[2900,2,30],[3900,2,40],[4800,2,50],
+    [5800,3,30],[7700,3,40],[12000,4,30],[18000,6,30],[24000,8,30],[36000,11,30],[48000,13,30],
+  ] : [
+    [1000,1,30],[1300,1,40],[1600,1,50],[2000,2,30],[2600,2,40],[3200,2,50],
+    [3900,3,30],[5200,3,40],[6400,3,50],[7700,3,60],[8000,4,30],[12000,6,30],
+    [16000,8,30],[24000,11,30],[32000,13,30],
+  ];
+  for (const [p, h, f] of table) {
+    if (p === pts) return {han: h, fu: f, yakuman: 0};
+  }
+  if (pts >= 48000 && isDealer) return {han: 13, fu: 30, yakuman: 1};
+  if (pts >= 32000 && !isDealer) return {han: 13, fu: 30, yakuman: 1};
+  return {han: 5, fu: 30, yakuman: 0};
+}
+
+function tsumoIdxToHanFu(idx, isDealer) {
+  const table = isDealer ? [
+    [1,30],[1,40],[2,30],[2,40],[3,30],[3,40],[5,30],[6,30],[8,30],[11,30],[13,30],
+  ] : [
+    [1,30],[1,40],[2,30],[2,40],[3,30],[3,40],[5,30],[6,30],[8,30],[11,30],[13,30],
+  ];
+  if (idx >= 0 && idx < table.length) {
+    return {han: table[idx][0], fu: table[idx][1], yakuman: table[idx][0] >= 13 ? 1 : 0};
+  }
+  return {han: 5, fu: 30, yakuman: 0};
+}
+
+async function submitRon() {
+  const winnerSeats = getSelectedSeats('ronWinner');
+  const loser = getSelectedSeat('ronLoser');
+  if (winnerSeats.length === 0 || loser === null) { toast('和了者と放銃者を選択してください', true); return; }
+  if (winnerSeats.includes(loser)) { toast('和了者と放銃者は別のプレイヤーにしてください', true); return; }
+
+  const riichi = getRiichiSeatsFromBoard();
+
+  // Build winners array with their han/fu
+  const winners = [];
+  for (const seat of winnerSeats) {
+    const isDealer = seat === gameState.current_dealer;
+    const suffix = `_w${seat}`;
+    const customPts = parseInt(document.getElementById(`ronCustomPts${suffix}`).value);
+    let han, fu, yakuman;
+    if (customPts > 0) {
+      const calc = ronPointsToHanFu(customPts, isDealer);
+      han = calc.han; fu = calc.fu; yakuman = calc.yakuman;
+    } else {
+      const sel = document.querySelector(`#ronPts${suffix} .point-btn.selected`);
+      if (!sel) {
+        const pname = gameState.players.find(p => p.seat === seat)?.name || seat;
+        toast(`${pname} の点数を選択してください`, true);
+        return;
+      }
+      const pts = parseInt(sel.dataset.pts);
+      const calc = ronPointsToHanFu(pts, isDealer);
+      han = calc.han; fu = calc.fu; yakuman = calc.yakuman;
+    }
+    winners.push({seat, han, fu, yakuman_multiplier: yakuman});
+  }
+
+  try {
+    let url, body;
+    if (winners.length === 1) {
+      url = `/api/v1/games/${gameId}/ron`;
+      body = {winner_seat: winners[0].seat, loser_seat: loser, han: winners[0].han, fu: winners[0].fu, yakuman_multiplier: winners[0].yakuman_multiplier, riichi_seats: riichi};
+    } else {
+      url = `/api/v1/games/${gameId}/multi-ron`;
+      body = {loser_seat: loser, winners, riichi_seats: riichi};
+    }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    gameState = data.game_state;
+    riichiSeats.clear();
+    tenpaiSeats.clear();
+    showAgariEffect('ron');
+    computeDeltas(data.round_result.point_changes);
+    renderGame();
+    const label = winners.length === 1 ? 'ロン' : winners.length === 2 ? 'ダブルロン' : 'トリプルロン';
+    toast(`${label}確定`);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function submitTsumo() {
+  const winner = getSelectedSeat('tsumoWinner');
+  if (winner === null) { toast('和了者を選択してください', true); return; }
+
+  const riichi = getRiichiSeatsFromBoard();
+  const isDealer = winner === gameState.current_dealer;
+
+  const customHan = parseInt(document.getElementById('tsumoHan').value);
+  const customFu = parseInt(document.getElementById('tsumoFu').value);
+  let han, fu, yakuman;
+  if (customHan > 0) {
+    han = customHan; fu = customFu || 30; yakuman = han >= 13 ? 1 : 0;
+  } else {
+    const gridId = isDealer ? 'tsumoPointsDealer' : 'tsumoPointsNon';
+    const sel = document.querySelector(`#${gridId} .point-btn.selected`);
+    if (!sel) { toast('点数を選択してください', true); return; }
+    const idx = parseInt(sel.dataset.idx);
+    const calc = tsumoIdxToHanFu(idx, isDealer);
+    han = calc.han; fu = calc.fu; yakuman = calc.yakuman;
+  }
+
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}/tsumo`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({winner_seat: winner, han, fu, yakuman_multiplier: yakuman, riichi_seats: riichi}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    gameState = data.game_state;
+    riichiSeats.clear();
+    tenpaiSeats.clear();
+    showAgariEffect('tsumo');
+    computeDeltas(data.round_result.point_changes);
+    renderGame();
+    toast('ツモ確定');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function submitDraw() {
+  const tenpai = getTenpaiSeatsFromBoard();
+  const riichi = getRiichiSeatsFromBoard();
+
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}/draw`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tenpai_seats: tenpai, riichi_seats: riichi}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    gameState = data.game_state;
+    riichiSeats.clear();
+    tenpaiSeats.clear();
+    computeDeltas(data.round_result.point_changes);
+    renderGame();
+    toast('流局確定');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function doUndo() {
+  if (!confirm('直前の操作を取り消しますか？')) return;
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}/undo`, {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    gameState = data.game_state;
+    lastDeltas = {};
+    renderGame();
+    toast('取り消しました');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function syncGameState() {
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    gameState = data;
+    renderGame();
+    // Request full state sync via WebSocket
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({type: 'request_sync'}));
+    }
+    toast('同期しました');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function showHistory() {
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}/history`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    const list = document.getElementById('historyList');
+    list.innerHTML = '';
+    if (data.rounds.length === 0) {
+      list.innerHTML = '<p style="text-align:center;color:#aaa">まだ記録がありません</p>';
+    }
+    const typeLabels = {ron:'ロン',tsumo:'ツモ',draw:'流局',init:'開始'};
+    data.rounds.forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      const windName = WIND_NAMES[r.round_wind] || '';
+      const changes = Object.entries(r.point_changes)
+        .map(([s, d]) => `${gameState.players[parseInt(s)].name}: ${d > 0 ? '+' : ''}${d.toLocaleString()}`)
+        .filter(x => !x.endsWith(': 0'))
+        .join(', ');
+      div.innerHTML = `<span class="type">${windName}${(parseInt(r.dealer_seat) % 4) + 1}局 ${r.honba}本場</span>
+        ${typeLabels[r.result_type] || r.result_type} ${changes}`;
+      list.appendChild(div);
+    });
+    document.getElementById('historyModal').classList.add('active');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// --- Chart ---
+const CHART_COLORS = ['#e94560', '#3498db', '#2ecc71', '#f39c12'];
+
+async function showChart() {
+  try {
+    const res = await fetch(`/api/v1/games/${gameId}/history`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'エラー');
+    const rounds = data.rounds;
+    const gs = data.game_state;
+    if (rounds.length === 0) { toast('まだ記録がありません', true); return; }
+    document.getElementById('chartModal').classList.add('active');
+    requestAnimationFrame(() => drawChart(rounds, gs));
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+function drawChart(rounds, gs) {
+  const canvas = document.getElementById('chartCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const displayW = canvas.clientWidth;
+  const displayH = 300;
+  canvas.width = displayW * dpr;
+  canvas.height = displayH * dpr;
+  canvas.style.height = displayH + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const players = gs.players;
+  const startPts = {};
+  // Reconstruct starting points: current points minus all accumulated changes
+  for (const p of players) {
+    let total = 0;
+    for (const r of rounds) {
+      total += (r.point_changes[String(p.seat)] || 0);
+    }
+    startPts[p.seat] = p.points - total;
+  }
+
+  // Build data series: [round0=start, round1, round2, ...]
+  const series = {};
+  for (const p of players) {
+    series[p.seat] = [startPts[p.seat]];
+  }
+  for (const r of rounds) {
+    for (const p of players) {
+      const prev = series[p.seat][series[p.seat].length - 1];
+      series[p.seat].push(prev + (r.point_changes[String(p.seat)] || 0));
+    }
+  }
+
+  const numPoints = rounds.length + 1;
+  let minY = Infinity, maxY = -Infinity;
+  for (const p of players) {
+    for (const v of series[p.seat]) {
+      if (v < minY) minY = v;
+      if (v > maxY) maxY = v;
+    }
+  }
+  // Add padding
+  const yRange = maxY - minY || 1;
+  minY -= yRange * 0.1;
+  maxY += yRange * 0.1;
+
+  const pad = {top: 20, right: 15, bottom: 30, left: 50};
+  const w = displayW - pad.left - pad.right;
+  const h = displayH - pad.top - pad.bottom;
+
+  const xScale = (i) => pad.left + (i / (numPoints - 1 || 1)) * w;
+  const yScale = (v) => pad.top + h - ((v - minY) / (maxY - minY || 1)) * h;
+
+  // Clear
+  ctx.fillStyle = '#16213e';
+  ctx.fillRect(0, 0, displayW, displayH);
+
+  // Grid lines
+  ctx.strokeStyle = '#2a2a4e';
+  ctx.lineWidth = 0.5;
+  const yTicks = 5;
+  for (let i = 0; i <= yTicks; i++) {
+    const v = minY + (maxY - minY) * i / yTicks;
+    const y = yScale(v);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(pad.left + w, y);
+    ctx.stroke();
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(v).toLocaleString(), pad.left - 5, y + 3);
+  }
+
+  // 30000 line
+  if (minY < 30000 && maxY > 30000) {
+    const y30 = yScale(30000);
+    ctx.strokeStyle = '#e9456044';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y30);
+    ctx.lineTo(pad.left + w, y30);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#e9456088';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('30000', pad.left + 2, y30 - 3);
+  }
+
+  // X axis labels
+  ctx.fillStyle = '#888';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < numPoints; i++) {
+    const x = xScale(i);
+    if (i === 0) {
+      ctx.fillText('開始', x, displayH - 8);
+    } else {
+      const r = rounds[i - 1];
+      const windName = WIND_NAMES[r.round_wind] || '';
+      const dealerNum = (r.dealer_seat % 4) + 1;
+      // Show label every few rounds to avoid overlap
+      if (numPoints <= 12 || i % 2 === 0) {
+        ctx.fillText(`${windName}${dealerNum}`, x, displayH - 8);
+      }
+    }
+  }
+
+  // Draw lines
+  for (const p of players) {
+    const data = series[p.seat];
+    ctx.strokeStyle = CHART_COLORS[p.seat % CHART_COLORS.length];
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      const x = xScale(i);
+      const y = yScale(data[i]);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // End point dot
+    const lastX = xScale(data.length - 1);
+    const lastY = yScale(data[data.length - 1]);
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = CHART_COLORS[p.seat % CHART_COLORS.length];
+    ctx.fill();
+  }
+
+  // Legend
+  const legend = document.getElementById('chartLegend');
+  legend.innerHTML = '';
+  for (const p of players) {
+    const color = CHART_COLORS[p.seat % CHART_COLORS.length];
+    const pts = series[p.seat][series[p.seat].length - 1];
+    const el = document.createElement('span');
+    el.style.cssText = `color:${color};font-weight:bold`;
+    el.textContent = `● ${p.name} (${pts.toLocaleString()})`;
+    legend.appendChild(el);
+  }
+}
+
+function downloadChart() {
+  const canvas = document.getElementById('chartCanvas');
+  const filename = `mahjong_score_${roomCode || 'game'}.png`;
+  canvas.toBlob(blob => {
+    if (!blob) { toast('画像の生成に失敗しました', true); return; }
+    // Try Web Share API (mobile: saves to photos/shares directly)
+    if (navigator.canShare && navigator.canShare({files: [new File([blob], filename, {type: 'image/png'})]})) {
+      const file = new File([blob], filename, {type: 'image/png'});
+      navigator.share({files: [file], title: '点数推移グラフ'}).catch(() => {});
+      return;
+    }
+    // Fallback: blob URL download
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('画像を保存しました');
+  }, 'image/png');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+
+// --- Dice ---
+function renderDiceFace(el, value) {
+  el.className = 'dice face-' + value;
+  el.innerHTML = '';
+  for (let i = 0; i < value; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    el.appendChild(dot);
+  }
+}
+
+function rollDice() {
+  const d1 = document.getElementById('dice1');
+  const d2 = document.getElementById('dice2');
+  const totalEl = document.getElementById('diceTotal');
+  document.getElementById('diceModal').classList.add('active');
+
+  // Rolling animation
+  d1.className = 'dice rolling';
+  d2.className = 'dice rolling';
+  d1.innerHTML = '';
+  d2.innerHTML = '';
+  totalEl.textContent = '';
+
+  let ticks = 0;
+  const maxTicks = 8;
+  const interval = setInterval(() => {
+    const tmp1 = Math.floor(Math.random() * 6) + 1;
+    const tmp2 = Math.floor(Math.random() * 6) + 1;
+    renderDiceFace(d1, tmp1);
+    d1.classList.add('rolling');
+    renderDiceFace(d2, tmp2);
+    d2.classList.add('rolling');
+    ticks++;
+    if (ticks >= maxTicks) {
+      clearInterval(interval);
+      const v1 = Math.floor(Math.random() * 6) + 1;
+      const v2 = Math.floor(Math.random() * 6) + 1;
+      renderDiceFace(d1, v1);
+      renderDiceFace(d2, v2);
+      totalEl.textContent = `合計: ${v1 + v2}`;
+    }
+  }, 100);
+}
+
+// --- Auto-join from URL query params ---
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const room = params.get('room');
+  if (room) {
+    document.getElementById('joinCode').value = room.toUpperCase();
+    // Focus on the name input for quick join
+    setTimeout(() => document.getElementById('joinName').focus(), 100);
+  }
+})();
+</script>
+</body>
+</html>
