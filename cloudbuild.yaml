@@ -1,0 +1,82 @@
+substitutions:
+  _SERVICE_NAME: "mahjong-score-flow"
+  _REGION: "asia-northeast1"
+  _REGISTRY: "asia-northeast1-docker.pkg.dev/${PROJECT_ID}/mahjong-score-flow"
+
+steps:
+  # ─── Step 1: Test ───
+  - id: "test"
+    name: "python:3.11-slim"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        pip install --quiet -r requirements.txt
+        pytest -q
+    waitFor: ["-"]
+
+  # ─── Step 2: Docker build ───
+  # test が成功しないと build 以降（push/deploy）へ進まない。
+  - id: "build"
+    name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGISTRY}/api:${SHORT_SHA}"
+      - "-t"
+      - "${_REGISTRY}/api:latest"
+      - "."
+    waitFor: ["test"]
+
+  # ─── Step 3: Docker push ───
+  - id: "push"
+    name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "--all-tags"
+      - "${_REGISTRY}/api"
+    waitFor: ["build"]
+
+  # ─── Step 4: Deploy to Cloud Run ───
+  # min-instances/cpu-boost/session-affinity/timeoutは指定せず全てデフォルト(コストガードレール準拠)
+  - id: "deploy"
+    name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE_NAME}"
+      - "--image=${_REGISTRY}/api:${SHORT_SHA}"
+      - "--region=${_REGION}"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+    waitFor: ["push"]
+
+  # ─── Step 5: Smoke test ───
+  - id: "smoke-test"
+    name: "gcr.io/cloud-builders/gcloud"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        SERVICE_URL=$(gcloud run services describe ${_SERVICE_NAME} \
+          --region=${_REGION} --format='value(status.url)')
+        echo "Smoke testing: $${SERVICE_URL}/health"
+        for i in 1 2 3 4 5; do
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$${SERVICE_URL}/health")
+          if [ "$$STATUS" = "200" ]; then
+            echo "Health check passed (attempt $$i)"
+            exit 0
+          fi
+          echo "Attempt $$i: got $$STATUS, retrying in 5s..."
+          sleep 5
+        done
+        echo "Smoke test failed after 5 attempts"
+        exit 1
+    waitFor: ["deploy"]
+
+images:
+  - "${_REGISTRY}/api:${SHORT_SHA}"
+  - "${_REGISTRY}/api:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
